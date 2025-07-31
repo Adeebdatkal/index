@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>منصة التداول</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+  <!-- Firebase App (compat) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <!-- Firebase Auth (compat) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <!-- Firebase Firestore (compat) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <style>
+    body { font-family: 'Tajawal', sans-serif; background: linear-gradient(to right, #0f172a, #1e293b);}
+    .glow { box-shadow: 0 0 10px #3b82f6, 0 0 20px #3b82f6;}
+    .toast { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1000; background: rgba(0, 0, 0, 0.8); padding: 20px 30px; border-radius: 12px; font-size: 1.25rem; font-weight: bold; color: white; animation: fadeOut 1.5s ease-in-out forwards;}
+    @keyframes fadeOut { 0%, 80% { opacity: 1; } 100% { opacity: 0; } }
+    #expirationLabel { position: absolute; left: 50%; top: 22px; color: #fff; font-weight: bold; background: #222d; padding: 3px 12px; border-radius: 7px; z-index: 2; pointer-events: none; font-size: 13px; transform: translateX(-50%);}
+    .trade-timer-bar { height: 5px; border-radius: 0 0 12px 12px; margin-bottom:4px; }
+    .trade-timer-box { background: #1e293baa; color: #fff; padding: 2px 10px; border-radius: 10px; font-weight: bold; font-size: 13px; margin-right:8px; }
+    .active-trade-row { background:rgba(34,197,94,.09); border-radius:7px; margin-bottom:4px; padding: 0 7px;}
+    .active-trade-row.sell { background:rgba(239,68,68,.08);}
+    #chart { width: 100vw !important; min-width: 0; min-height: 0;}
+    @media (max-width: 640px) {
+      #chart { height: 240px !important; }
+    }
+    @media (min-width: 641px) {
+      #chart { height: 410px !important; }
+    }
+    .dropdown-account-menu {
+      min-width: 260px;
+      background: #1e293b;
+      border: 1px solid #38bdf8;
+      border-radius: 1rem;
+      position: absolute;
+      top: 46px;
+      right: 0;
+      left: auto;
+      max-width: 90vw;
+      z-index: 10000;
+      box-shadow: 0 4px 30px #2dd4b850, 0 2px 6px #0006;
+      padding: 1.3rem 1rem 1.1rem 1rem;
+      display: none;
+      animation: fadeInMenu 0.18s;
+    }
+    @keyframes fadeInMenu { 0%{opacity:.4;transform:translateY(-14px)} 100%{opacity:1;transform:translateY(0);} }
+    .account-switch-btn { transition: background .18s, color .18s; }
+    .account-switch-btn.active { background: #0891b2 !important; color: #fff !important; border-color: #38bdf8 !important; }
+    .logout-btn { background: #dc2626; padding: 6px 14px; border-radius: 8px; color: #fff; font-weight: bold; margin-right: 14px; transition: background 0.2s;}
+    .logout-btn:hover { background: #a91d1d; }
+    .dropdown-divider { margin: 10px 0; height: 1px; background: #38bdf830; border: none;}
+    .fixed { z-index: 10000 !important; }
+    @media (max-width: 640px) {
+      .dropdown-account-menu {
+        top: 46px !important;
+        min-width: 175px !important;
+        padding: 0.7rem 0.4rem 0.7rem 0.4rem !important;
+        font-size: 0.95rem !important;
+      }
+      .logo-text { font-size: 1.08rem !important; }
+      .logo-icon { display: none !important; }
+      .logo-title { letter-spacing: -0.5px; }
+      .balance-text { font-size: 1.01rem !important; }
+    }
+  </style>
+</head>
+<body class="text-white w-full h-full">
+
+  <div id="toastContainer"></div>
+
+  <!-- الهيدر المتجاوب والمعدل -->
+  <div class="fixed top-0 left-0 w-full z-50 bg-blue-950 shadow p-2 flex items-center justify-between gap-2">
+
+    <!-- زر القائمة المنبثقة للحساب - أقصى يمين (همبرغر) -->
+    <div class="relative flex-shrink-0">
+      <button id="accountMenuBtn" onclick="toggleAccountMenu()"
+        class="flex items-center justify-center rounded-full bg-blue-800 hover:bg-blue-900 shadow-lg border border-cyan-500"
+        style="width: 38px; height: 38px;">
+        <!-- أيقونة همبرغر -->
+        <svg width="23" height="23" viewBox="0 0 24 24" fill="none">
+          <rect y="4" width="24" height="3" rx="1.5" fill="#38bdf8"/>
+          <rect y="10.5" width="24" height="3" rx="1.5" fill="#38bdf8"/>
+          <rect y="17" width="24" height="3" rx="1.5" fill="#38bdf8"/>
+        </svg>
+      </button>
+      <!-- القائمة المنبثقة -->
+      <div id="accountMenuPopup" class="dropdown-account-menu text-base text-white font-bold" dir="rtl">
+        <div class="mb-2">
+          <span class="text-cyan-400 font-bold text-lg">نوع الحساب</span>
+        </div>
+        <div class="flex gap-2 mb-3">
+          <button id="popupDemoBtn" onclick="switchAccountType('demo')" class="flex-1 px-3 py-1 rounded-lg font-bold border account-switch-btn">تجريبي</button>
+          <button id="popupRealBtn" onclick="switchAccountType('real')" class="flex-1 px-3 py-1 rounded-lg font-bold border account-switch-btn">حقيقي</button>
+        </div>
+        <button id="popupResetBtn" onclick="openResetDemoModal();hideAccountMenu()" class="w-full mb-2 bg-yellow-500 hover:bg-yellow-600 text-blue-900 font-bold py-2 rounded-lg transition">إعادة شحن الحساب التجريبي</button>
+        <button id="popupReferralBtn" onclick="showReferralModal();hideAccountMenu()" class="w-full mb-2 bg-cyan-700 hover:bg-cyan-900 text-white font-bold py-2 rounded-lg flex gap-2 justify-center items-center transition">
+          <img src="https://img.icons8.com/color/20/gift--v1.png"> دعوة
+        </button>
+        <hr class="dropdown-divider" />
+        <button onclick="logout()" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 rounded-lg transition">تسجيل خروج</button>
+      </div>
+    </div>
+
+    <!-- اسم المنصة بالمنتصف -->
+    <div class="flex-1 flex justify-center items-center">
+      <span class="logo-text text-xl font-bold text-cyan-400 text-center whitespace-nowrap">
+        <span class="logo-icon">💹</span>
+        <span class="logo-title">منصة التداول</span>
+      </span>
+    </div>
+
+    <!-- الرصيد على اليسار -->
+    <div class="flex-shrink-0 flex items-center">
+      <span class="balance-text text-green-400 font-bold whitespace-nowrap" style="font-size:1.05rem;">
+        $<span id="balance">...</span>
+      </span>
+    </div>
+  </div>
+  </div>
+
+  <div class="pt-28 w-full">
+    <div class="mb-4 flex items-center gap-4 w-full justify-center">
+      <select id="pair" class="bg-blue-900 glow text-white px-4 py-2 rounded-md">
+        <option value="BTC/USD">Bitcoin</option>
+        <option value="XAU/USD">Gold</option>
+      </select>
+      <span id="currentPriceDisplay" class="inline-block px-3 py-1 rounded-lg bg-blue-950 text-green-300 font-bold shadow glow" style="min-width:110px">--</span>
+    </div>
+    <div class="w-full flex justify-center items-center">
+      <div class="bg-blue-800 rounded-xl shadow-inner mb-2 relative overflow-hidden flex items-center justify-center w-full" style="width:100vw;max-width:100vw;">
+        <div id="chart"></div>
+        <div id="expirationLabel">Expiration time</div>
+      </div>
+    </div>
+    <div id="activeTrades" class="text-yellow-300 mb-3 w-full"></div>
+    <div id="sentimentContainer" class="mb-6 w-full">
+      <div class="flex items-center justify-between mb-1 px-2">
+        <span class="text-cyan-300 font-bold">🔀 حساسية السوق</span>
+        <span id="sentimentText" class="font-bold text-white text-xs"></span>
+      </div>
+      <div class="relative h-3 md:h-4 rounded-full overflow-hidden shadow-md bg-blue-900 w-full">
+        <div id="sentimentBar" class="absolute top-0 left-0 h-full rounded-full transition-all duration-700 ease-in-out animate-pulse-bar"
+          style="width: 50%; background: linear-gradient(90deg, #16a34a 70%, #38bdf8); box-shadow: 0 0 16px #22d3ee88, 0 0 24px #22d3ee44;">
+        </div>
+        <div class="absolute inset-0 flex justify-between items-center px-2 text-[10px] md:text-xs font-bold pointer-events-none select-none">
+          <span class="text-green-400">شراء</span>
+          <span class="text-red-400">بيع</span>
+        </div>
+      </div>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
+      <div class="flex items-center gap-2 mb-1 px-2">
+        <img src="https://img.icons8.com/fluency/24/alarm-clock.png" alt="مدة الصفقة" class="w-6 h-6">
+        <span class="text-cyan-300 font-semibold">مدة الصفقة</span>
+      </div>
+      <div class="flex gap-2 items-center px-2">
+        <button onclick="document.getElementById('duration').stepDown()" class="bg-blue-700 hover:bg-blue-800 text-white px-2 py-1 rounded glow">-</button>
+        <input id="duration" type="number" min="10" max="300" value="60" class="flex-1 bg-blue-900 glow text-white p-3 rounded-lg placeholder:text-cyan-300 text-center"/>
+        <button onclick="document.getElementById('duration').stepUp()" class="bg-blue-700 hover:bg-blue-800 text-white px-2 py-1 rounded glow">+</button>
+      </div>
+      <div class="flex items-center gap-2 mb-1 px-2">
+        <img src="https://img.icons8.com/fluency/24/us-dollar-circled--v1.png" alt="مبلغ الصفقة" class="w-6 h-6">
+        <span class="text-cyan-300 font-semibold">مبلغ الصفقة</span>
+      </div>
+      <div class="flex gap-2 items-center px-2">
+        <button onclick="document.getElementById('amount').stepDown()" class="bg-blue-700 hover:bg-blue-800 text-white px-2 py-1 rounded glow">-</button>
+        <input id="amount" type="number" value="10" class="flex-1 bg-blue-900 glow text-white p-3 rounded-lg placeholder:text-cyan-300 text-center"/>
+        <button onclick="document.getElementById('amount').stepUp()" class="bg-blue-700 hover:bg-blue-800 text-white px-2 py-1 rounded glow">+</button>
+      </div>
+    </div>
+    <div class="flex gap-4 mt-4 w-full px-2">
+      <button id="buyBtn"
+        class="flex-1 bg-green-600 hover:bg-green-700 text-white p-3 rounded-lg font-bold glow transition">شراء</button>
+      <button id="sellBtn"
+        class="flex-1 bg-red-600 hover:bg-red-700 text-white p-3 rounded-lg font-bold glow transition">بيع</button>
+    </div>
+    <h2 class="text-2xl font-semibold mt-10 mb-3 text-cyan-300 px-2">📄 سجل الصفقات</h2>
+    <div class="overflow-x-auto w-full px-2">
+      <table class="w-full text-center bg-blue-950 rounded-lg overflow-hidden">
+        <thead class="bg-blue-800 text-cyan-300">
+          <tr>
+            <th class="p-2">النوع</th>
+            <th class="p-2">الزوج</th>
+            <th class="p-2">سعر الدخول</th>
+            <th class="p-2">سعر الخروج</th>
+            <th class="p-2">الوقت</th>
+            <th class="p-2">النتيجة</th>
+            <th class="p-2">الربح/الخسارة</th>
+          </tr>
+        </thead>
+        <tbody id="tradeHistory" class="text-white"></tbody>
+      </table>
+    </div>
+  </div>
+
+<script>
+// ====== إعداد Firebase ======
+const firebaseConfig = {
+  apiKey: "AIzaSyCC1rC4Alcc-SzcYrvqQidnwHVIT_rcySw",
+  authDomain: "my-platform-8123a.firebaseapp.com",
+  projectId: "my-platform-8123a",
+  storageBucket: "my-platform-8123a.firebasestorage.app",
+  messagingSenderId: "512871623014",
+  appId: "1:512871623014:web:9ce5f2b8f94d9b5d6280a7",
+  measurementId: "G-48QSBN6CZW"
+};
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+let userId = null;
+
+// نوع الحساب الحالي: demo أو real
+let accountType = 'demo'; // الافتراضي
+
+let balance = 0;
+
+// ========== وظائف القائمة المنبثقة للحساب ==========
+function toggleAccountMenu() {
+  const popup = document.getElementById('accountMenuPopup');
+  popup.style.display = (popup.style.display === 'none' || popup.style.display === '') ? 'block' : 'none';
+  updatePopupMenu();
+}
+function hideAccountMenu() {
+  document.getElementById('accountMenuPopup').style.display = 'none';
+}
+// غلق القائمة عند الضغط خارجها
+window.addEventListener('click', function(e) {
+  const popup = document.getElementById('accountMenuPopup');
+  const btn = document.getElementById('accountMenuBtn');
+  if (popup && !popup.contains(e.target) && e.target !== btn && !btn.contains(e.target)) {
+    popup.style.display = 'none';
+  }
+});
+function updatePopupMenu() {
+  document.getElementById('popupDemoBtn').classList.toggle('active', accountType === 'demo');
+  document.getElementById('popupRealBtn').classList.toggle('active', accountType === 'real');
+  document.getElementById('popupResetBtn').style.display = (accountType === 'demo') ? 'block' : 'none';
+  document.getElementById('popupReferralBtn').style.display = (accountType === 'real') ? 'block' : 'none';
+}
+
+// ========== وظائف المنصة العامة ==========
+function openResetDemoModal() {
+  document.getElementById('resetDemoModal').style.display = 'flex';
+  document.getElementById('demoAmount').value = 1000;
+  document.getElementById('demoMsg').textContent = '';
+}
+function closeResetDemoModal() {
+  document.getElementById('resetDemoModal').style.display = 'none';
+  document.getElementById('demoMsg').textContent = '';
+}
+async function resetDemoBalance() {
+  const amount = parseInt(document.getElementById('demoAmount').value);
+  if(isNaN(amount) || amount < 1000 || amount > 10000) {
+    document.getElementById('demoMsg').textContent = "يرجى إدخال مبلغ بين 1000 و 10000.";
+    return;
+  }
+  document.getElementById('demoMsg').textContent = '';
+  const user = firebase.auth().currentUser;
+  if (!user) {
+    document.getElementById('demoMsg').textContent = "يجب تسجيل الدخول أولاً!";
+    return;
+  }
+  try {
+    await db.collection("users").doc(user.uid).update({ balance_demo: amount });
+    closeResetDemoModal();
+    showToast("تم إعادة شحن الحساب التجريبي بنجاح!", "#4ade80");
+    document.getElementById('balance').textContent = amount.toFixed(2);
+    balance = amount;
+  } catch (e) {
+    document.getElementById('demoMsg').textContent = "حدث خطأ، حاول مرة أخرى.";
+  }
+}
+
+// ========== نافذة الدعوة ==========
+function showReferralModal() {
+  const user = firebase.auth().currentUser;
+  if (!user) return;
+  const refLink = `https://yourdomain.com/register.html?ref=${user.uid}`;
+  let shareMsg = encodeURIComponent("انضم إلى منصة التداول عبر رابط الدعوة الخاص بي وسجّل حسابك مباشرة!");
+  let waURL = `https://wa.me/?text=${encodeURIComponent(refLink + "\n" + "انضم إلى منصة التداول عبر رابط الدعوة الخاص بي!")}`;
+  let tgURL = `https://t.me/share/url?url=${encodeURIComponent(refLink)}&text=${shareMsg}`;
+
+  document.getElementById('refLinkModal').value = refLink;
+  document.getElementById('waBtn').href = waURL;
+  document.getElementById('tgBtn').href = tgURL;
+  document.getElementById('referralModal').style.display = "flex";
+  document.getElementById('copyMsg').textContent = "";
+}
+function hideReferralModal() {
+  document.getElementById('referralModal').style.display = "none";
+  document.getElementById('copyMsg').textContent = "";
+}
+function copyReferral() {
+  const input = document.getElementById('refLinkModal');
+  input.select();
+  input.setSelectionRange(0, 99999);
+  document.execCommand("copy");
+  document.getElementById('copyMsg').textContent = "تم نسخ الرابط!";
+  setTimeout(() => document.getElementById('copyMsg').textContent = "", 1800);
+}
+window.addEventListener('click', function(e) {
+  let modal = document.getElementById('referralModal');
+  if (modal && e.target === modal) { modal.style.display = 'none'; }
+});
+function logout() {
+  auth.signOut().then(() => {
+    window.location.href = "register.html";
+  });
+}
+
+// ========== دوال إدارة المستخدم ==========
+async function initUserBalance() {
+  const userDoc = db.collection("users").doc(userId);
+  const doc = await userDoc.get();
+  if (doc.exists) {
+    if (accountType === "demo") {
+      balance = doc.data().balance_demo ?? 1000;
+    } else {
+      balance = doc.data().balance_real ?? 0;
+    }
+  } else {
+    balance = accountType === "demo" ? 1000 : 0;
+    await userDoc.set({ balance_demo: 1000, balance_real: 0 });
+  }
+}
+function updateBalanceDisplay() {
+  document.getElementById('balance').textContent = balance.toFixed(2);
+}
+async function changeUserBalance(amountChange) {
+  balance += amountChange;
+  updateBalanceDisplay();
+  if (accountType === "demo") {
+    await db.collection("users").doc(userId).update({ balance_demo: balance });
+  } else {
+    await db.collection("users").doc(userId).update({ balance_real: balance });
+  }
+}
+async function fetchAndDisplayTradeHistory() {
+  const collection = accountType === 'demo' ? 'trades_demo' : 'trades_real';
+  const tradesRef = db.collection("users").doc(userId).collection(collection).orderBy("time", "desc").limit(50);
+  const snapshot = await tradesRef.get();
+  const tbody = document.getElementById('tradeHistory');
+  tbody.innerHTML = "";
+  snapshot.forEach(doc => {
+    const trade = doc.data();
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="${trade.type === 'شراء' ? 'text-green-400' : 'text-red-400'} font-bold">${trade.type}</td>
+      <td>${trade.pair || ''}</td>
+      <td>${trade.entryPrice}</td>
+      <td>${trade.exitPrice !== undefined ? trade.exitPrice : '--'}</td>
+      <td>${new Date(trade.time.seconds ? trade.time.seconds * 1000 : trade.time).toLocaleTimeString()}</td>
+      <td>${trade.result}</td>
+      <td class="${trade.profit >= 0 ? 'text-green-300' : 'text-red-300'}">${trade.profit}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+// ========== تبديل نوع الحساب ==========
+function switchAccountType(type) {
+  accountType = type;
+  updatePopupMenu();
+  initUserBalance().then(() => {
+    updateBalanceDisplay();
+    fetchAndDisplayTradeHistory();
+  });
+}
+
+// ========== الشارت وحركة الأسعار ==========
+const pairsData = {
+  "BTC/USD": { price: 66000, volatility: 180 },
+  "XAU/USD": { price: 2350, volatility: 3 }
+};
+let areaData = [];
+let currentPair = "BTC/USD";
+let price, time;
+let chart, areaSeries, expirationLine;
+let chartInterval = null;
+let activeTrades = [];
+let tradeIdSeed = 1;
+let markers = {};
+
+function generatePairData(pair) {
+  areaData = [];
+  let base = pairsData[pair].price;
+  let vol = pairsData[pair].volatility;
+  time = Math.floor(Date.now() / 1000) - 1800;
+  price = base;
+  for (let i = 0; i < 120; i++) {
+    price += (Math.random() - 0.5) * (vol / 1000);
+    areaData.push({ time: time + i * 15, value: parseFloat(price.toFixed(2)) });
+  }
+}
+function setupChart() {
+  document.getElementById('chart').innerHTML = "";
+  chart = LightweightCharts.createChart(document.getElementById('chart'), {
+    layout: { background: { color: '#1e293b' }, textColor: '#c9d1d9' },
+    grid: { vertLines: { color: '#25304d' }, horzLines: { color: '#25304d' } },
+    rightPriceScale: { borderColor: '#48536a' },
+    timeScale: { borderColor: '#48536a' },
+    crosshair: {
+      vertLine: { color: '#3b82f6', width: 2, style: 0 },
+      horzLine: { color: '#3b82f6', width: 1, style: 0 }
+    }
+  });
+  areaSeries = chart.addAreaSeries({
+    topColor: 'rgba(59,130,246,0.3)',
+    bottomColor: 'rgba(59,130,246,0.0)',
+    lineColor: '#3b82f6',
+    lineWidth: 2,
+    crosshairMarkerVisible: false,
+  });
+  areaSeries.setData(areaData);
+
+  if (!markers[currentPair]) markers[currentPair] = [];
+  areaSeries.setMarkers(markers[currentPair]);
+
+  let entryIndex = areaData.length - 1;
+  let entry = areaData[entryIndex];
+  let expirationTime = entry.time + 60;
+  expirationLine = chart.addLineSeries({
+    color: '#f5f5f5',
+    lineWidth: 2,
+    lineStyle: 2,
+    priceLineVisible: false,
+    lastValueVisible: false
+  });
+  expirationLine.setData([
+    { time: expirationTime, value: entry.value - 0.0003 },
+    { time: expirationTime, value: entry.value + 0.0003 }
+  ]);
+}
+function updateCurrentPrice() {
+  let currentPrice = areaData[areaData.length - 1].value;
+  document.getElementById('currentPriceDisplay').textContent = currentPrice;
+}
+function updateChartData() {
+  let vol = pairsData[currentPair].volatility;
+  price += (Math.random() - 0.5) * (vol / 1000);
+  const newTime = areaData[areaData.length - 1].time + 15;
+  areaData.push({ time: newTime, value: parseFloat(price.toFixed(2)) });
+  if (areaData.length > 120) areaData.shift();
+  areaSeries.setData(areaData);
+  if (!markers[currentPair]) markers[currentPair] = [];
+  areaSeries.setMarkers(markers[currentPair]);
+
+  let entryIndex = areaData.length - 1;
+  let entry = areaData[entryIndex];
+  let expirationTime = entry.time + 60;
+  expirationLine.setData([
+    { time: expirationTime, value: entry.value - 0.0003 },
+    { time: expirationTime, value: entry.value + 0.0003 }
+  ]);
+  updateCurrentPrice();
+}
+document.getElementById('pair').addEventListener('change', function() {
+  currentPair = this.value;
+  generatePairData(currentPair);
+  setupChart();
+  updateCurrentPrice();
+  if (chartInterval) clearInterval(chartInterval);
+  chartInterval = setInterval(updateChartData, 1000);
+
+  updateActiveTradesDisplay();
+});
+generatePairData(currentPair);
+setupChart();
+updateCurrentPrice();
+chartInterval = setInterval(updateChartData, 1000);
+
+// ========== ميزة حساسية السوق ==========
+let sentiment = 50;
+function updateSentiment() {
+  let delta = (Math.random() - 0.5) * 10;
+  sentiment += delta;
+  if (sentiment > 95) sentiment = 95;
+  if (sentiment < 5) sentiment = 5;
+  const buy = Math.round(sentiment);
+  const sell = 100 - buy;
+  const sentimentBar = document.getElementById('sentimentBar');
+  sentimentBar.style.width = buy + '%';
+  let grad = `linear-gradient(90deg, #16a34a, #38bdf8 ${buy}%, #dc2626 ${buy}%)`;
+  sentimentBar.style.background = grad;
+  document.getElementById('sentimentText').textContent = `شراء ${buy}% / بيع ${sell}%`;
+}
+setInterval(updateSentiment, 1500);
+setTimeout(updateSentiment, 200);
+
+// ========== نظام الصفقات المعدل ==========
+document.getElementById('buyBtn').onclick = async function() { await openTrade("شراء"); };
+document.getElementById('sellBtn').onclick = async function() { await openTrade("بيع"); };
+
+async function openTrade(type) {
+  let amount = parseFloat(document.getElementById('amount').value);
+  let duration = parseInt(document.getElementById('duration').value);
+  let entry = areaData[areaData.length - 1];
+  if(balance < amount) {
+    showToast("الرصيد غير كافٍ!", "orange");
+    return;
+  }
+  await changeUserBalance(-amount);
+  showToast(`تم فتح صفقة ${type}!`, type === "شراء" ? "#00f0ff" : "#ff4664");
+
+  let trade = {
+    id: tradeIdSeed++,
+    type: type,
+    pair: currentPair,
+    amount: amount,
+    entryPrice: entry.value,
+    entryTime: entry.time,
+    secondsLeft: duration,
+    totalSeconds: duration,
+    timer: null,
+    finished: false,
+    areaDataSnapshot: JSON.parse(JSON.stringify(areaData))
+  };
+  addTradeMarker(trade);
+
+  trade.timer = setInterval(() => {
+    trade.secondsLeft--;
+    updateActiveTradesDisplay();
+    if (trade.secondsLeft <= 0) {
+      clearInterval(trade.timer);
+      finishTrade(trade);
+    }
+  }, 1000);
+  activeTrades.push(trade);
+  updateActiveTradesDisplay();
+}
+
+function getExitPrice(trade) {
+  if (trade.pair === currentPair) {
+    return areaData[areaData.length - 1].value;
+  } else {
+    let pairData = JSON.parse(JSON.stringify(trade.areaDataSnapshot));
+    let vol = pairsData[trade.pair].volatility;
+    let price = pairData[pairData.length - 1].value;
+    let time = pairData[pairData.length - 1].time;
+    let secondsNeeded = trade.totalSeconds;
+    let steps = Math.ceil(secondsNeeded / 15);
+    for (let i = 0; i < steps; i++) {
+      price += (Math.random() - 0.5) * (vol / 1000);
+      time += 15;
+      pairData.push({ time, value: parseFloat(price.toFixed(2)) });
+    }
+    return pairData[pairData.length - 1].value;
+  }
+}
+
+async function finishTrade(trade) {
+  if (trade.finished) return;
+  trade.finished = true;
+
+  let exitPrice = getExitPrice(trade);
+
+  let isWin = false;
+  if (trade.type === "شراء") {
+    isWin = exitPrice > trade.entryPrice;
+  } else {
+    isWin = exitPrice < trade.entryPrice;
+  }
+  let profit = 0;
+  if (isWin) {
+    profit = trade.amount * 0.8 + trade.amount;
+    showToast("ربحت الصفقة!", "#00ff6b");
+  } else {
+    profit = 0;
+    showToast("خسرت الصفقة!", "#ff2222");
+  }
+  if (isWin) await changeUserBalance(profit);
+
+  const collection = accountType === 'demo' ? 'trades_demo' : 'trades_real';
+  await db.collection("users").doc(userId)
+    .collection(collection)
+    .add({
+      type: trade.type,
+      pair: trade.pair,
+      entryPrice: trade.entryPrice,
+      exitPrice: exitPrice,
+      time: new Date(),
+      result: isWin ? "ربح" : "خسارة",
+      profit: isWin ? Number((trade.amount * 0.8).toFixed(2)) : -trade.amount
+    });
+
+  fetchAndDisplayTradeHistory();
+  removeTradeMarkerById(trade);
+  activeTrades = activeTrades.filter(t => t.id !== trade.id);
+  updateActiveTradesDisplay();
+}
+
+function addTradeMarker(trade) {
+  if (!markers[trade.pair]) markers[trade.pair] = [];
+  let color = trade.type === "شراء" ? "#16a34a" : "#dc2626";
+  let position = trade.type === "شراء" ? "belowBar" : "aboveBar";
+  markers[trade.pair].push({
+    time: trade.entryTime,
+    position: position,
+    color: color,
+    shape: 'circle',
+    id: trade.id,
+    text: trade.type
+  });
+  if (trade.pair === currentPair && areaSeries) areaSeries.setMarkers(markers[currentPair]);
+}
+function removeTradeMarkerById(trade) {
+  if (markers[trade.pair]) {
+    markers[trade.pair] = markers[trade.pair].filter(m => m.id !== trade.id);
+    if (trade.pair === currentPair && areaSeries) areaSeries.setMarkers(markers[currentPair]);
+  }
+}
+function updateActiveTradesDisplay() {
+  let container = document.getElementById('activeTrades');
+  if (activeTrades.length === 0) {
+    container.innerHTML = "";
+    return;
+  }
+  let html = "";
+  activeTrades.forEach(trade => {
+    let percent = (trade.secondsLeft / trade.totalSeconds) * 100;
+    html += `
+      <div class="flex items-center gap-2 mb-1 active-trade-row ${trade.type === 'بيع' ? 'sell':''}">
+        <div style="min-width:60px;">
+          <span class="${trade.type === 'شراء' ? 'text-green-400':'text-red-400'} font-bold">${trade.type}</span>
+        </div>
+        <div style="width:100px;">
+          <span>${trade.pair}</span>
+        </div>
+        <div style="width:110px;">
+          <span>سعر: ${trade.entryPrice}</span>
+        </div>
+        <div style="flex:1;">
+          <div class="trade-timer-bar" style="width:100%;background: linear-gradient(90deg, ${trade.type === 'شراء' ? '#16a34a' : '#dc2626'} ${percent}%, #3b82f6);">
+            <div style="width:${percent}%;background:transparent;height:5px;"></div>
+          </div>
+        </div>
+        <div class="trade-timer-box">
+          ${formatSeconds(trade.secondsLeft)}
+        </div>
+      </div>
+    `;
+  });
+  container.innerHTML = html;
+}
+function showToast(message, color) {
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  toast.style.color = color;
+  toast.textContent = message;
+  document.getElementById('toastContainer').appendChild(toast);
+  setTimeout(() => toast.remove(), 1500);
+}
+function formatSeconds(sec) {
+  return sec > 0 ? String(Math.floor(sec/60)).padStart(2, "0")+":"+String(sec%60).padStart(2, "0") : "00:00";
+}
+
+// ========== تحقق المستخدم ==========
+auth.onAuthStateChanged(async user => {
+  if (!user) {
+    window.location.href = "register.html";
+  } else {
+    userId = user.uid;
+    const userDoc = await db.collection("users").doc(userId).get();
+    if (userDoc.exists && userDoc.data().suspended === true) {
+      showToast("تم تجميد حسابك من قبل الإدارة، يرجى التواصل مع الدعم.", "#ff2222");
+      setTimeout(async () => {
+        await auth.signOut();
+        window.location.href = "register.html";
+      }, 2000);
+      return;
+    }
+    // تفعيل الزر النشط المناسب
+    updatePopupMenu();
+    await initUserBalance();
+    updateBalanceDisplay();
+    fetchAndDisplayTradeHistory();
+  }
+});
+</script>
+
+<!-- نافذة الدعوة المنبثقة -->
+<div id="referralModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:9999; justify-center items-center;" class="flex">
+  <div class="bg-blue-900 p-6 rounded-2xl shadow-2xl max-w-[98vw] w-[370px] mx-auto my-auto border border-blue-800 relative">
+    <button onclick="hideReferralModal()" class="absolute left-3 top-3 text-xl font-bold text-gray-400 hover:text-red-400">×</button>
+    <div class="text-cyan-300 font-bold mb-3 text-lg flex items-center gap-2">
+      رابط الدعوة الخاص بك
+      <img src="https://img.icons8.com/color/22/gift--v1.png"/>
+    </div>
+    <input id="refLinkModal" type="text" readonly class="bg-blue-800 text-white px-2 py-2 rounded w-full text-center mb-3" />
+    <div class="flex gap-2 mb-2">
+      <button onclick="copyReferral()" class="bg-green-600 hover:bg-green-700 px-3 py-1 rounded text-white font-bold w-1/2">نسخ</button>
+      <a id="waBtn" target="_blank" class="bg-green-500 hover:bg-green-600 px-3 py-1 rounded text-white font-bold w-1/2 flex items-center gap-1 justify-center">
+        <img src="https://img.icons8.com/color/20/000000/whatsapp--v1.png"> واتساب
+      </a>
+    </div>
+    <a id="tgBtn" target="_blank" class="bg-blue-400 hover:bg-blue-600 px-3 py-1 rounded text-white font-bold w-full flex items-center gap-1 justify-center mb-2">
+      <img src="https://img.icons8.com/color/20/000000/telegram-app--v1.png"> تيليغرام
+    </a>
+    <div id="copyMsg" class="text-green-400 text-sm text-center mt-1"></div>
+  </div>
+</div>
+<!--Start of Tawk.to Script-->
+<script type="text/javascript">
+var Tawk_API=Tawk_API||{}, Tawk_LoadStart=new Date();
+(function(){
+var s1=document.createElement("script"),s0=document.getElementsByTagName("script")[0];
+s1.async=true;
+s1.src='https://embed.tawk.to/687da0f5416fc119149cbf3b/1j0lbpg1p';
+s1.charset='UTF-8';
+s1.setAttribute('crossorigin','*');
+s0.parentNode.insertBefore(s1,s0);
+})();
+</script>
+<!--End of Tawk.to Script-->
+<!-- نافذة إعادة شحن الحساب التجريبي -->
+<div id="resetDemoModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:9999; align-items:center; justify-content:center;" class="flex">
+  <div class="bg-white rounded-2xl shadow-xl p-8 max-w-xs w-full relative">
+    <button onclick="closeResetDemoModal()" class="absolute left-4 top-3 text-2xl text-gray-500 hover:text-red-500 font-bold">×</button>
+    <h3 class="text-xl font-bold text-blue-800 mb-4 text-center">إعادة شحن الحساب التجريبي</h3>
+    <label class="block mb-2 font-bold text-blue-900">اختر مبلغ الرصيد الجديد (1000 - 10000):</label>
+    <input id="demoAmount" type="number" min="1000" max="10000" value="1000"
+      class="w-full p-3 rounded border border-blue-400 text-center font-bold mb-4 text-blue-900"/>
+    <button onclick="resetDemoBalance()" class="bg-yellow-500 hover:bg-yellow-600 w-full p-3 rounded-lg font-bold text-blue-900">تأكيد</button>
+    <div id="demoMsg" class="text-center mt-2 text-red-600 font-bold text-sm"></div>
+  </div>
+</div>
+
+</body>
+</html>
