@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>تسجيل الدخول</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Firebase App (compat) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <!-- Firebase Auth (compat) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <!-- Firebase Firestore (compat) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+</head>
+<body class="bg-blue-950 flex items-center justify-center min-h-screen">
+  <div class="bg-blue-900 p-8 rounded-xl shadow-lg w-full max-w-md">
+    <h2 class="text-cyan-400 text-2xl font-bold mb-6 text-center">تسجيل الدخول / حساب جديد</h2>
+    <div class="mb-4">
+      <input type="email" id="email" class="w-full p-3 rounded bg-blue-800 text-white mb-2" placeholder="البريد الإلكتروني" />
+      <input type="password" id="password" class="w-full p-3 rounded bg-blue-800 text-white" placeholder="كلمة السر" />
+    </div>
+    <!-- مربع الموافقة على الشروط -->
+    <div class="mb-4 flex items-center gap-2">
+      <input type="checkbox" id="agreeTerms" class="w-5 h-5 accent-blue-700" />
+      <label for="agreeTerms" class="text-sm">
+        أوافق على <a href="policy.pdf" download="سياسة_الاستخدام.pdf" class="text-cyan-300 underline font-bold" target="_blank">الشروط والأحكام وسياسة الخصوصية</a>
+      </label>
+    </div>
+    <div class="flex gap-4 mb-4">
+      <button onclick="login()" class="flex-1 bg-green-600 hover:bg-green-700 text-white p-3 rounded-lg font-bold">تسجيل الدخول</button>
+      <button onclick="register()" id="registerBtn" class="flex-1 bg-cyan-600 hover:bg-cyan-700 text-white p-3 rounded-lg font-bold">تسجيل جديد</button>
+    </div>
+    <div class="text-center mb-2">
+      <a href="#" onclick="showResetForm();return false;" class="text-cyan-400 hover:underline">نسيت كلمة المرور؟</a>
+    </div>
+    <div id="resetForm" class="hidden mb-4">
+      <input type="email" id="resetEmail" class="w-full p-2 rounded bg-blue-800 text-white mb-2" placeholder="أدخل بريدك الإلكتروني" />
+      <button onclick="resetPassword()" class="bg-yellow-500 hover:bg-yellow-600 text-white p-2 rounded w-full">إرسال رابط إعادة التعيين</button>
+    </div>
+    <div id="msg" class="text-center text-sm mt-2"></div>
+  </div>
+  <script>
+    // بيانات مشروعك من Firebase
+    const firebaseConfig = {
+      apiKey: "AIzaSyCC1rC4Alcc-SzcYrvqQidnwHVIT_rcySw",
+      authDomain: "my-platform-8123a.firebaseapp.com",
+      projectId: "my-platform-8123a",
+      storageBucket: "my-platform-8123a.firebasestorage.app",
+      messagingSenderId: "512871623014",
+      appId: "1:512871623014:web:9ce5f2b8f94d9b5d6280a7",
+      measurementId: "G-48QSBN6CZW"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+
+    // حماية: إذا المستخدم مسجل دخول ➜ حوله للمنصة
+    auth.onAuthStateChanged(user => {
+      if (user && user.emailVerified) {
+        window.location.href = "index.html";
+      }
+    });
+
+    function showMsg(msg, color="white") {
+      document.getElementById('msg').textContent = msg;
+      document.getElementById('msg').style.color = color;
+    }
+
+    function getReferralId() {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('ref') || null;
+    }
+
+    function login() {
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+      auth.signInWithEmailAndPassword(email, password)
+        .then(userCredential => {
+          const user = userCredential.user;
+          if (!user.emailVerified) {
+            showMsg("يجب تفعيل بريدك الإلكتروني أولاً! تم إرسال رسالة تفعيل لك.", "#fd6");
+            user.sendEmailVerification().catch(()=>{});
+            auth.signOut();
+          } else {
+            showMsg("تم تسجيل الدخول بنجاح! جاري التحويل...", "#2fee58");
+            setTimeout(() => window.location.href = "index.html", 1000);
+          }
+        })
+        .catch(err => showMsg(err.message, "#f44"));
+    }
+
+    async function register() {
+      // تحقق من الموافقة على الشروط
+      if (!document.getElementById('agreeTerms').checked) {
+        showMsg("يجب الموافقة على الشروط والأحكام وسياسة الخصوصية قبل التسجيل.", "#ff2222");
+        return;
+      }
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+      if(password.length < 6) {
+        showMsg("كلمة السر يجب أن تكون 6 أحرف أو أكثر!", "#f44");
+        return;
+      }
+      try {
+        const userCredential = await auth.createUserWithEmailAndPassword(email, password);
+        const user = userCredential.user;
+        const referredBy = getReferralId();
+        let baseUserData = {
+          email: user.email,
+          balance: 1000,
+          referralBonus: 5 // كل مستخدم جديد لديه مكافأة إحالة افتراضية (يمكن تعديلها من الأدمن)
+        };
+
+        // إذا سجل المستخدم عن طريق رابط إحالة
+        if (referredBy) {
+          baseUserData.referredBy = referredBy;
+        }
+        // حفظ بيانات المستخدم الجديد في القاعدة
+        await db.collection("users").doc(user.uid).set(baseUserData);
+
+        // إذا فيه إحالة، امنح المُحيل مكافأته الخاصة
+        if (referredBy) {
+          const refDoc = await db.collection("users").doc(referredBy).get();
+          let bonus = 5;
+          if (refDoc.exists && refDoc.data().referralBonus) {
+            bonus = Number(refDoc.data().referralBonus);
+          }
+          await db.collection("users").doc(referredBy).update({
+            balance: firebase.firestore.FieldValue.increment(bonus)
+          });
+        }
+
+        await user.sendEmailVerification();
+        showMsg("تم إنشاء الحساب! تم إرسال رسالة تفعيل لبريدك. يرجى التحقق ثم تسجيل الدخول.", "#00e2ff");
+        auth.signOut();
+      } catch (err) {
+        showMsg(err.message, "#f44");
+      }
+    }
+
+    // إظهار/إخفاء فورم نسيت كلمة السر
+    function showResetForm() {
+      document.getElementById('resetForm').classList.toggle('hidden');
+    }
+    function resetPassword() {
+      const email = document.getElementById('resetEmail').value;
+      if (!email) {
+        showMsg("أدخل بريدك الإلكتروني لإعادة تعيين كلمة السر.", "#fa0");
+        return;
+      }
+      auth.sendPasswordResetEmail(email)
+        .then(() => showMsg("تم إرسال رابط تغيير كلمة السر لبريدك الإلكتروني.", "#0ef"))
+        .catch(err => showMsg(err.message, "#f44"));
+    }
+  </script>
+  <!--Start of Tawk.to Script-->
+<script type="text/javascript">
+var Tawk_API=Tawk_API||{}, Tawk_LoadStart=new Date();
+(function(){
+var s1=document.createElement("script"),s0=document.getElementsByTagName("script")[0];
+s1.async=true;
+s1.src='https://embed.tawk.to/687da0f5416fc119149cbf3b/1j0lbpg1p';
+s1.charset='UTF-8';
+s1.setAttribute('crossorigin','*');
+s0.parentNode.insertBefore(s1,s0);
+})();
+</script>
+<!--End of Tawk.to Script-->
+</body>
+</html>
